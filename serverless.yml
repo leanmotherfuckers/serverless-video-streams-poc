@@ -56,6 +56,27 @@ provider:
       Resource:
         - 'Fn::GetAtt': [MediaConvertJobRole, Arn]
 
+# Lambda functions
+functions:
+  # Triggered by S3, starts MediaConvert job
+  convert:
+    handler: src/convert.handler
+    events:
+      - s3:
+          bucket: ${self:custom.bucket}
+          event: s3:ObjectCreated:*
+          existing: true # denotes that the bucket already exists (we created it above)
+          rules:
+            - prefix: input/
+
+  # Triggered by SNS to update conversion status in DynamoDB
+  updateDatabase:
+    handler: src/updateDatabase.handler
+    events:
+      - sns:
+          arn: !Ref NotificationTopic
+          topicName: NotificationTopic
+
 # Create any other (non-lambda) AWS resources we need
 resources:
   Resources:
@@ -141,38 +162,6 @@ resources:
         CloudFrontOriginAccessIdentityConfig:
           Comment: 'Access private S3 bucket content only through CloudFront'
 
-    # SNS topic to get updates on MediaConvert progress
-    NotificationTopic:
-      Type: AWS::SNS::Topic
-
-    # Event rule to send events to SNS topic
-    NotificationEventRule:
-      Type: AWS::Events::Rule
-      Properties:
-        Description: Report status as event to SNS topic
-        State: 'ENABLED'
-        EventPattern:
-          source:
-            - 'aws.mediaconvert'
-        Targets:
-          - Arn: !Ref NotificationTopic
-            Id: 'NotificationTopic'
-
-    # Access policy
-    NotificationTopicPolicy:
-      Type: AWS::SNS::TopicPolicy
-      Properties:
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-            - Sid: AllowCloudWatchEvents
-              Effect: Allow
-              Principal:
-                Service: events.amazonaws.com
-              Action: sns:Publish
-              Resource: '*'
-        Topics:
-          - !Ref NotificationTopic
 
     # Cloudfront CDN for output streams
     VideoCloudfront:
@@ -209,23 +198,35 @@ resources:
           ViewerCertificate:
             CloudFrontDefaultCertificate: 'true'
 
-# Lambda functions
-functions:
-  # Triggered by S3, starts MediaConvert job
-  convert:
-    handler: src/convert.handler
-    events:
-      - s3:
-          bucket: ${self:custom.bucket}
-          event: s3:ObjectCreated:*
-          existing: true # denotes that the bucket already exists (we created it above)
-          rules:
-            - prefix: input/
+    # SNS topic to get updates on MediaConvert progress
+    NotificationTopic:
+      Type: AWS::SNS::Topic
 
-  # Triggered by SNS to update conversion status in DynamoDB
-  updateDatabase:
-    handler: src/updateDatabase.handler
-    events:
-      - sns:
-          arn: !Ref NotificationTopic
-          topicName: NotificationTopic
+    # Event rule to send events to SNS topic
+    NotificationEventRule:
+      Type: AWS::Events::Rule
+      Properties:
+        Description: Report status as event to SNS topic
+        State: 'ENABLED'
+        EventPattern:
+          source:
+            - 'aws.mediaconvert'
+        Targets:
+          - Arn: !Ref NotificationTopic
+            Id: 'NotificationTopic'
+
+    # Access policy
+    NotificationTopicPolicy:
+      Type: AWS::SNS::TopicPolicy
+      Properties:
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Sid: AllowCloudWatchEvents
+              Effect: Allow
+              Principal:
+                Service: events.amazonaws.com
+              Action: sns:Publish
+              Resource: '*'
+        Topics:
+          - !Ref NotificationTopic
