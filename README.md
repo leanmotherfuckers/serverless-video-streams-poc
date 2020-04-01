@@ -3,7 +3,7 @@
 This is a simple proof-of-concept showing how to set up a serverless infrastructure for automatically converting MP4 videos into a HLS video stream (m3u8) with support for multiple different frame rates.
 
 
-# Architecture
+## Architecture
 
 <p align="center"><img src=".github/stack.png" alt="Cloudformation diagram" height="420" /></p>
 
@@ -15,9 +15,9 @@ This is a simple proof-of-concept showing how to set up a serverless infrastruct
 6. This `output/` directory of the bucket is publicly accessible via CloudFront. The URL for the CloudFront-hosted `m3u8` stream entrypoint can be retrieved from DynamoDB.
 
 
-# Details
+## Details
 
-## Video quality
+### Video quality
 The stream is stored with various sizes/quality settings. More can be added in `src/utils/videoConfig.js`:
 
 ```js
@@ -34,7 +34,7 @@ const outputProfiles = {
 The video player will automatically detect these and choose the one that best suits the user's network speed.
 
 
-## Segment length & other HSL settings
+### Segment length & other HSL settings
 These can be customized in the same `videoConfig.js` file. Might be interesting to play around with segment length, which is currently set to 4 seconds. Apple seems to recommend 6 seconds, but this creates rather big files (around 9MB per segment at 1080p quality).
 
 ```js
@@ -58,14 +58,14 @@ const hlsSettings = {
 ```
 
 
-## Testing video stream
+### Testing video stream
 
 There are several test-players that can be used to verify a HLS stream is functional, like [this one from Castr](https://castr.io/hlsplayer).
 
 You can use this stream URL to test with: `https://d2e4qh30w42wts.cloudfront.net/0dc46851-a7d3-40ab-9e9e-25e367ed3f2c.m3u8`
 
 
-# Deploying to your own AWS account
+## Deploying to your own AWS account
 
 1. Run `yarn`
 2. Run `yarn deploy`
