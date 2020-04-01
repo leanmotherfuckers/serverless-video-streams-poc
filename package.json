@@ -1,0 +1,14 @@
+{
+  "name": "video-streams-poc",
+  "license": "UNLICENSED",
+  "scripts": {
+    "deploy": "serverless deploy --verbose"
+  },
+  "devDependencies": {
+    "aws-sdk": "^2.650.0",
+    "serverless": "1.63.0"
+  },
+  "dependencies": {
+    "uuid": "^7.0.3"
+  }
+}

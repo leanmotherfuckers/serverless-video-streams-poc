@@ -1,0 +1,231 @@
+service: video-streams-poc
+
+# Define our custom config vars
+custom:
+  stage: ${opt:stage, 'local'}
+  region: ${opt:region, 'eu-west-1'}
+  dynamodbTable: ${self:service}-videos
+  bucket: ${self:service}-files
+
+# Set our provider to AWS and set some defaults
+provider:
+  name: aws
+  timeout: 30
+  memorySize: 1024
+  runtime: nodejs12.x
+  stage: ${self:custom.stage}
+  region: ${self:custom.region}
+
+  # These environment vars will be available in every lambda
+  environment:
+    SERVICE: ${self:service}
+    STAGE: ${self:custom.stage}
+    NODE_ENV: ${self:custom.stage}
+    REGION: ${self:custom.region}
+    DYNAMODB_TABLE: ${self:custom.dynamodbTable}
+    MEDIA_CONVERT_ROLE: !GetAtt MediaConvertJobRole.Arn
+    CLOUDFRONT_DOMAIN: { 'Fn::GetAtt': [VideoCloudfront, DomainName] }
+
+  # Set some permissions, controls what other services the lambdas can call
+  iamRoleStatements:
+    - Effect: Allow # allow this lambda to invoke other lambdas (optional?)
+      Action:
+        - lambda:InvokeFunction
+      Resource:
+        - '*'
+    - Effect: Allow # allow writing to DynamoDB table
+      Action:
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+      Resource:
+        - 'Fn::GetAtt': [ VideosTable, Arn ]
+    - Effect: Allow # allow access to S3 bucket and files
+      Action:
+        - s3:*
+      Resource:
+        - arn:aws:s3:::${self:custom.bucket}
+        - arn:aws:s3:::${self:custom.bucket}/*
+    - Effect: Allow # allow lambda to call AWS media converter
+      Action:
+        - mediaconvert:*
+      Resource:
+        - '*'
+    - Effect: Allow # allow passing on role to media converter
+      Action:
+        - iam:PassRole
+      Resource:
+        - 'Fn::GetAtt': [MediaConvertJobRole, Arn]
+
+# Create any other (non-lambda) AWS resources we need
+resources:
+  Resources:
+    # Create a videos DynamoDB table to save a list of stored videos and their URLs
+    VideosTable:
+      DeletionPolicy: Delete
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.dynamodbTable}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id # uuid
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+
+    # The S3 bucket where we will drop the original video files
+    VideoBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.bucket}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+              AllowedOrigins:
+                - '*'
+              Id: OpenCors
+              MaxAge: '3600'
+
+    # Give the media converter access to the S3 bucket
+    MediaConvertJobRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            Effect: Allow
+            Principal:
+              Service:
+                - mediaconvert.amazonaws.com
+                - mediaconvert.eu-west-1.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+        Path: '/'
+        Policies:
+          - PolicyName: MediaConvertJobRolePolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - s3:*
+                    - sns:*
+                    - logs:*
+                    - cloudwatch:*
+                    - autoscaling:Describe*
+                  Resource: '*'
+
+    # Policy for s3 bucket (to give Cloudfront access to it)
+    SourceBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: ${self:custom.bucket}
+        PolicyDocument:
+          Statement:
+            - Sid: PolicyForCloudFrontPrivateContent
+              Effect: Allow
+              Principal:
+                CanonicalUser:
+                  Fn::GetAtt: OriginAccessIdentity.S3CanonicalUserId
+              Action:
+                - 's3:GetObject'
+              Resource: arn:aws:s3:::${self:custom.bucket}/output/*
+
+    # Identity to access S3 via Cloudfront
+    OriginAccessIdentity:
+      Type: 'AWS::CloudFront::CloudFrontOriginAccessIdentity'
+      Properties:
+        CloudFrontOriginAccessIdentityConfig:
+          Comment: 'Access private S3 bucket content only through CloudFront'
+
+    # SNS topic to get updates on MediaConvert progress
+    NotificationTopic:
+      Type: AWS::SNS::Topic
+
+    # Event rule to send events to SNS topic
+    NotificationEventRule:
+      Type: AWS::Events::Rule
+      Properties:
+        Description: Report status as event to SNS topic
+        State: 'ENABLED'
+        EventPattern:
+          source:
+            - 'aws.mediaconvert'
+        Targets:
+          - Arn: !Ref NotificationTopic
+            Id: 'NotificationTopic'
+
+    # Access policy
+    NotificationTopicPolicy:
+      Type: AWS::SNS::TopicPolicy
+      Properties:
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Sid: AllowCloudWatchEvents
+              Effect: Allow
+              Principal:
+                Service: events.amazonaws.com
+              Action: sns:Publish
+              Resource: '*'
+        Topics:
+          - !Ref NotificationTopic
+
+    # Cloudfront CDN for output streams
+    VideoCloudfront:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Origins:
+            - DomainName: ${self:custom.bucket}.s3.amazonaws.com
+              Id: myS3Origin
+              OriginPath: /output
+              S3OriginConfig:
+                OriginAccessIdentity:
+                  Fn::Join:
+                    - ''
+                    - - 'origin-access-identity/cloudfront/'
+                      - Ref: OriginAccessIdentity
+          Enabled: 'true'
+          DefaultRootObject: index.html
+          DefaultCacheBehavior:
+            TargetOriginId: myS3Origin
+            ViewerProtocolPolicy: allow-all
+            MinTTL: '86400'
+            SmoothStreaming: 'false'
+            Compress: 'true'
+            ForwardedValues:
+              QueryString: 'false'
+              Cookies:
+                Forward: 'none'
+              Headers:
+                - 'Access-Control-Request-Headers'
+                - 'Access-Control-Request-Method'
+                - 'Origin'
+          PriceClass: PriceClass_All
+          ViewerCertificate:
+            CloudFrontDefaultCertificate: 'true'
+
+# Lambda functions
+functions:
+  # Triggered by S3, starts MediaConvert job
+  convert:
+    handler: src/convert.handler
+    events:
+      - s3:
+          bucket: ${self:custom.bucket}
+          event: s3:ObjectCreated:*
+          existing: true # denotes that the bucket already exists (we created it above)
+          rules:
+            - prefix: input/
+
+  # Triggered by SNS to update conversion status in DynamoDB
+  updateDatabase:
+    handler: src/updateDatabase.handler
+    events:
+      - sns:
+          arn: !Ref NotificationTopic
+          topicName: NotificationTopic
