@@ -5,7 +5,7 @@ This is a simple proof-of-concept showing how to set up a serverless infrastruct
 
 # Architecture
 
-<center><img src=".github/stack.png" alt="Cloudformation diagram" height="350" /></center>
+<p align="center"><img src=".github/stack.png" alt="Cloudformation diagram" height="350" /></p>
 
 1. User drops MP4 file in the directory `input/` in the S3 bucket.
 2. This will trigger a Lambda called `convert` that A) initiates a MediaConvert job and B) saves a record in DynamoDB with `conversionStatus = created` and with a `streamUrl` defined.
