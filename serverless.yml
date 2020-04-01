@@ -18,10 +18,7 @@ provider:
 
   # These environment vars will be available in every lambda
   environment:
-    SERVICE: ${self:service}
-    STAGE: ${self:custom.stage}
     NODE_ENV: ${self:custom.stage}
-    REGION: ${self:custom.region}
     DYNAMODB_TABLE: ${self:custom.dynamodbTable}
     MEDIA_CONVERT_ROLE: !GetAtt MediaConvertJobRole.Arn
     CLOUDFRONT_DOMAIN: { 'Fn::GetAtt': [VideoCloudfront, DomainName] }
