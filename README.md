@@ -57,6 +57,17 @@ const hlsSettings = {
 };
 ```
 
+### MediaConvert DescribeEndpoints Limit Rate
+Note that there is a rate limit of 0.01667 TPS (Once per 60 seconds) for DescribeEndpoints.
+
+```let { Endpoints } = await mediaconvert.describeEndpoints({ MaxResults: 0, }).promise();```
+
+Requesting it too often will result in `AccessDeniedException` error.
+
+Since this endpoint ties to your account and stays the same, it is recommended by AWS that you only request it once, then cache or hardcode it.
+Alternatively, you can also find the endpoint on AWS console at `Console > AWS Elemental MediaConvert > Account > API endpoint`.
+
+Read more: https://docs.aws.amazon.com/general/latest/gr/mediaconvert.html
 
 ### Testing video stream
 
