@@ -73,10 +73,8 @@ Read more: https://docs.aws.amazon.com/general/latest/gr/mediaconvert.html
 
 There are several test-players that can be used to verify a HLS stream is functional, like [this one from Castr](https://castr.io/hlsplayer).
 
-You can use this stream URL to test with: `https://d2e4qh30w42wts.cloudfront.net/0dc46851-a7d3-40ab-9e9e-25e367ed3f2c.m3u8`
 
-
-## Deploying to your own AWS account
+## Deploying to your AWS account
 
 1. Run `yarn`
 2. Run `yarn deploy`
